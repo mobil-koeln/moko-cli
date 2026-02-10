@@ -1,0 +1,33 @@
+# Binaries
+moko
+moko-*
+*.exe
+
+# IDE/Editor
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Git
+.git/
+.gitignore
+
+# Documentation
+*.md
+!README.md
+
+# Old Perl code
+old/
+
+# Docker
+Dockerfile
+.dockerignore
+
+# Cache
+.cache/
+
+# OS files
+.DS_Store
+Thumbs.db

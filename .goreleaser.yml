@@ -1,0 +1,86 @@
+# GoReleaser configuration
+# Run: goreleaser release --snapshot --clean
+
+version: 2
+
+before:
+  hooks:
+    - go mod tidy
+    - go generate ./...
+
+builds:
+  - id: moko
+    main: ./cmd/moko
+    binary: moko
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    ignore:
+      - goos: windows
+        goarch: arm64
+    ldflags:
+      - -s -w -X main.version={{.Version}}
+    flags:
+      - -trimpath
+
+archives:
+  - name_template: >-
+      {{ .ProjectName }}_
+      {{- .Version }}_
+      {{- .Os }}_
+      {{- .Arch }}
+    files:
+      - README.md
+      - LICENSE
+    # Note: format_overrides shows deprecation warning but is still functional in v2.8
+    # It's needed to provide .zip for Windows. Will update when GoReleaser provides alternative.
+    format_overrides:
+      - goos: windows
+        format: zip
+
+checksum:
+  name_template: "checksums.txt"
+
+snapshot:
+  version_template: "{{ incpatch .Version }}-next"
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
+      - "^chore:"
+      - Merge pull request
+      - Merge branch
+
+release:
+  github:
+    owner: mobil-koeln
+    name: moko-cli
+  draft: false
+  prerelease: auto
+
+# Note: 'brews' shows soft deprecation warning but is still the correct section for CLI tools.
+# (homebrew_casks is for macOS GUI apps). Will update when GoReleaser provides migration path.
+brews:
+  - name: moko
+    repository:
+      owner: mobil-koeln
+      name: homebrew-tap
+      token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
+    directory: Formula
+    homepage: "https://github.com/mobil-koeln/moko-cli"
+    description: "CLI for querying Deutsche Bahn real-time transit information with interactive TUI"
+    license: "MIT"
+    skip_upload: auto
+    test: |
+      system "#{bin}/moko", "--version"
+    install: |
+      bin.install "moko"
