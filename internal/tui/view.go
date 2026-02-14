@@ -104,7 +104,11 @@ func (m Model) renderSearchBar() string {
 
 // renderStationList renders the left station panel.
 func (m Model) renderStationList(width, height int) string {
-	title := styleHeader.Render("STATIONS")
+	title := "STATIONS"
+	if m.focus == focusStations {
+		title = "▶ " + title // Add indicator when focused
+	}
+	title = styleHeader.Render(title)
 
 	if m.stationsLoading {
 		return title + "\n" + styleLoading.Render(" Searching...")
@@ -116,9 +120,8 @@ func (m Model) renderStationList(width, height int) string {
 		return title + "\n" + styleMuted.Render(" Type a station name and press Enter")
 	}
 
-	var b strings.Builder
-	b.WriteString(title)
-	b.WriteString("\n")
+	// Reserve space for scrollbar (2 chars: space + scrollbar)
+	contentWidth := width - 2
 
 	// Calculate visible range to keep cursor in view
 	maxVisible := height - 2 // account for title + spacing
@@ -127,20 +130,50 @@ func (m Model) renderStationList(width, height int) string {
 	}
 	start, end := visibleRange(m.stationCursor, len(m.stations), maxVisible)
 
+	// Build content lines
+	var contentLines []string
 	for i := start; i < end; i++ {
 		station := m.stations[i]
-		name := truncate(station.Name, width-4)
+		name := truncate(station.Name, contentWidth-4)
 		if i == m.stationCursor {
-			b.WriteString(styleSelected.Render(" > " + name))
+			contentLines = append(contentLines, styleSelected.Render(" > "+name))
 		} else {
-			b.WriteString("   " + name)
+			contentLines = append(contentLines, "   "+name)
 		}
-		if i < end-1 {
+	}
+
+	// Pad content lines to match maxVisible height
+	for len(contentLines) < maxVisible {
+		contentLines = append(contentLines, "")
+	}
+
+	// Render scrollbar
+	scrollbarHeight := maxVisible
+	scrollbar := renderScrollbar(m.stationCursor, len(m.stations), scrollbarHeight)
+	scrollbarLines := strings.Split(scrollbar, "\n")
+
+	// Combine content and scrollbar side by side
+	var b strings.Builder
+	for i := 0; i < len(contentLines); i++ {
+		line := contentLines[i]
+		// Pad line to contentWidth to ensure scrollbar aligns
+		lineWidth := lipgloss.Width(line)
+		if lineWidth < contentWidth {
+			line += strings.Repeat(" ", contentWidth-lineWidth)
+		}
+		b.WriteString(line)
+
+		if i < len(scrollbarLines) {
+			b.WriteString(" ") // Space before scrollbar
+			b.WriteString(scrollbarLines[i])
+		}
+
+		if i < len(contentLines)-1 {
 			b.WriteString("\n")
 		}
 	}
 
-	return b.String()
+	return title + "\n" + b.String()
 }
 
 // renderRightPanel renders departures and optionally journey details with route map.
@@ -201,7 +234,10 @@ func (m Model) renderDepartureList(width, height int) string {
 		title = "ARRIVALS"
 	}
 	if m.selectedStation != nil {
-		title += " for " + truncate(m.selectedStation.Name, width-18)
+		title += " for " + truncate(m.selectedStation.Name, width-20)
+	}
+	if m.focus == focusDepartures {
+		title = "▶ " + title // Add indicator when focused
 	}
 	titleStr := styleHeader.Render(title)
 
@@ -218,9 +254,8 @@ func (m Model) renderDepartureList(width, height int) string {
 		return titleStr + "\n" + styleMuted.Render(" No departures found")
 	}
 
-	var b strings.Builder
-	b.WriteString(titleStr)
-	b.WriteString("\n")
+	// Reserve space for scrollbar
+	contentWidth := width - 2
 
 	maxVisible := height - 2
 	if maxVisible < 1 {
@@ -228,16 +263,45 @@ func (m Model) renderDepartureList(width, height int) string {
 	}
 	start, end := visibleRange(m.departureCursor, len(m.departures), maxVisible)
 
+	// Build content lines
+	var contentLines []string
 	for i := start; i < end; i++ {
 		dep := m.departures[i]
-		line := renderDepartureLine(dep, width, i == m.departureCursor && m.focus == focusDepartures)
+		line := renderDepartureLine(dep, contentWidth, i == m.departureCursor && m.focus == focusDepartures)
+		contentLines = append(contentLines, line)
+	}
+
+	// Pad content lines to match maxVisible height
+	for len(contentLines) < maxVisible {
+		contentLines = append(contentLines, "")
+	}
+
+	// Render scrollbar
+	scrollbar := renderScrollbar(m.departureCursor, len(m.departures), maxVisible)
+	scrollbarLines := strings.Split(scrollbar, "\n")
+
+	// Combine content and scrollbar
+	var b strings.Builder
+	for i := 0; i < len(contentLines); i++ {
+		line := contentLines[i]
+		// Pad line to contentWidth
+		lineWidth := lipgloss.Width(line)
+		if lineWidth < contentWidth {
+			line += strings.Repeat(" ", contentWidth-lineWidth)
+		}
 		b.WriteString(line)
-		if i < end-1 {
+
+		if i < len(scrollbarLines) {
+			b.WriteString(" ")
+			b.WriteString(scrollbarLines[i])
+		}
+
+		if i < len(contentLines)-1 {
 			b.WriteString("\n")
 		}
 	}
 
-	return b.String()
+	return titleStr + "\n" + b.String()
 }
 
 // renderDepartureLine renders a single departure entry.
@@ -310,22 +374,48 @@ func (m Model) renderStatusBar() string {
 	var hints string
 	switch m.focus {
 	case focusSearch:
-		hints = "Enter:search  Tab:filters  Esc:clear  Ctrl+C:quit"
+		hints = "Enter:search  Tab:next  Shift+Tab:back  Esc:clear  Ctrl+C:quit"
 	case focusFilters:
-		hints = "h/l:move  Space:toggle  a:all  Tab:dep/arr  Esc:search  q:quit"
+		hints = "h/l:move  Space:toggle  a:all  Tab:next  Shift+Tab:back  Esc:search  q:quit"
 	case focusBoard:
-		hints = "h/l:move  Space:select  Tab:auto-refresh  Esc:search  q:quit"
+		hints = "h/l:move  Space:select  Tab:next  Shift+Tab:back  Esc:search  q:quit"
 	case focusAutoRefresh:
-		hints = "Space:toggle  Tab:stations  Esc:search  q:quit"
+		hints = "Space:toggle  Tab:next  Shift+Tab:back  Esc:search  q:quit"
 	case focusStations:
-		hints = "j/k:navigate  Enter:select  Tab:departures  Esc:search  /:search  q:quit"
+		hints = "j/k:nav  PgUp/PgDn:page  Home/End:jump  Enter:select  Tab/Shift+Tab:nav  /:search  q:quit"
 	case focusDepartures:
-		hints = "j/k:navigate  Enter:journey  Tab:next  Esc:back  /:search  q:quit"
+		hints = "j/k:nav  PgUp/PgDn:page  Home/End:jump  Enter:journey  Tab/Shift+Tab:nav  Esc:back  q:quit"
 	case focusJourney:
-		hints = "j/k:scroll  Tab:search  Esc:departures  q:quit"
+		hints = "j/k:scroll  PgUp/PgDn:page  Home/End:jump  Tab/Shift+Tab:nav  Esc:back  q:quit"
 	}
 
-	return styleStatusBar.Width(m.width).Render(" " + hints)
+	// Add scroll position indicator
+	var indicator string
+	switch m.focus {
+	case focusStations:
+		indicator = scrollIndicator(m.stationCursor, len(m.stations))
+	case focusDepartures:
+		indicator = scrollIndicator(m.departureCursor, len(m.departures))
+	case focusJourney:
+		if m.journey != nil {
+			indicator = scrollIndicator(m.journeyScroll, len(m.journey.Stops))
+		}
+	}
+
+	statusText := " " + hints
+	if indicator != "" {
+		statusText += "  │  " + indicator
+	}
+
+	return styleStatusBar.Width(m.width).Render(statusText)
+}
+
+// scrollIndicator returns a position indicator string (e.g., "5/20").
+func scrollIndicator(cursor, total int) string {
+	if total == 0 {
+		return ""
+	}
+	return fmt.Sprintf("%d/%d", cursor+1, total) // 1-indexed for user display
 }
 
 // visibleRange calculates the start and end indices for a scrollable list.
@@ -361,4 +451,67 @@ func truncate(s string, width int) string {
 		return s[:width]
 	}
 	return s[:width-1] + "~"
+}
+
+// renderScrollbar renders a vertical scrollbar for a scrollable list.
+// cursor: current position (0-indexed)
+// total: total number of items
+// height: height of the scrollbar in lines
+// Returns a string with newlines for each line of the scrollbar.
+func renderScrollbar(cursor, total, height int) string {
+	if total == 0 || height <= 0 {
+		// Empty scrollbar
+		var b strings.Builder
+		for i := 0; i < height; i++ {
+			b.WriteString(" ")
+			if i < height-1 {
+				b.WriteString("\n")
+			}
+		}
+		return b.String()
+	}
+
+	// If all items fit, show full thumb
+	if total <= height {
+		var b strings.Builder
+		for i := 0; i < height; i++ {
+			b.WriteString(styleMuted.Render("█"))
+			if i < height-1 {
+				b.WriteString("\n")
+			}
+		}
+		return b.String()
+	}
+
+	// Calculate thumb size (proportional to visible/total ratio)
+	visibleRatio := float64(height) / float64(total)
+	thumbSize := int(float64(height) * visibleRatio)
+	if thumbSize < 1 {
+		thumbSize = 1
+	}
+
+	// Calculate thumb position
+	scrollRatio := float64(cursor) / float64(total-1)
+	thumbStart := int(scrollRatio * float64(height-thumbSize))
+	if thumbStart < 0 {
+		thumbStart = 0
+	}
+	if thumbStart+thumbSize > height {
+		thumbStart = height - thumbSize
+	}
+
+	// Build scrollbar
+	var b strings.Builder
+	for i := 0; i < height; i++ {
+		if i >= thumbStart && i < thumbStart+thumbSize {
+			b.WriteString(styleSelected.Render("█")) // Thumb
+		} else {
+			b.WriteString(styleMuted.Render("│")) // Track
+		}
+		if i < height-1 {
+			b.WriteString("\n")
+		}
+	}
+
+	return b.String()
 }
