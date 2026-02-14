@@ -120,6 +120,11 @@ func (m Model) handleFilterKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.focus = focusBoard
 		return m, nil
 
+	case "shift+tab":
+		m.focus = focusSearch
+		m.searchInput.Focus()
+		return m, nil
+
 	case "esc", "/":
 		m.focus = focusSearch
 		m.searchInput.Focus()
@@ -157,6 +162,10 @@ func (m Model) handleBoardKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	case "tab":
 		m.focus = focusAutoRefresh
+		return m, nil
+
+	case "shift+tab":
+		m.focus = focusFilters
 		return m, nil
 
 	case "esc", "/":

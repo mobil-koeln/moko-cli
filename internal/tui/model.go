@@ -80,12 +80,13 @@ type Model struct {
 	departuresErr     error
 
 	// Right panel - journey detail
-	selectedJourneyID string
-	journey           *models.Journey
-	journeyLoading    bool
-	journeyErr        error
-	showJourney       bool
-	journeyScroll     int
+	selectedJourneyID   string
+	journey             *models.Journey
+	journeyLoading      bool
+	journeyErr          error
+	showJourney         bool
+	journeyScroll       int
+	journeyManualScroll bool // true when user has manually scrolled in journey view
 }
 
 // New creates a new TUI model.

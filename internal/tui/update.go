@@ -5,6 +5,7 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/mobil-koeln/moko-cli/internal/output"
 )
 
 // Update handles all messages and key events.
@@ -120,9 +121,28 @@ func (m Model) handleJourneyResult(msg journeyResultMsg) (tea.Model, tea.Cmd) {
 		wasShowing := m.showJourney && m.journey != nil
 		m.journey = msg.journey
 		m.showJourney = true
-		// Only reset scroll for new journeys, not refreshes
-		if !wasShowing {
-			m.journeyScroll = 0
+
+		// ALWAYS clamp scroll position after setting journey (strengthened reactive clamping)
+		if m.journey != nil && len(m.journey.Stops) > 0 {
+			if m.journeyScroll >= len(m.journey.Stops) {
+				m.journeyScroll = len(m.journey.Stops) - 1
+			}
+			if m.journeyScroll < 0 {
+				m.journeyScroll = 0
+			}
+		}
+
+		if wasShowing && m.journeyManualScroll {
+			// User manually scrolled — position already clamped above
+		} else {
+			// New journey or no manual scroll — auto-scroll to current station.
+			m.journeyManualScroll = false
+			currentIdx := output.FindCurrentStopIndex(m.journey.Stops, time.Now())
+			if currentIdx >= 0 {
+				m.journeyScroll = currentIdx
+			} else {
+				m.journeyScroll = 0
+			}
 		}
 	}
 	return m, nil
@@ -175,6 +195,20 @@ func (m Model) handleSearchKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.focus = focusFilters
 		m.searchInput.Blur()
 		return m, nil
+
+	case "shift+tab":
+		// Navigate backward to last available panel
+		if m.showJourney {
+			m.focus = focusJourney
+		} else if len(m.departures) > 0 {
+			m.focus = focusDepartures
+		} else if len(m.stations) > 0 {
+			m.focus = focusStations
+		} else {
+			m.focus = focusAutoRefresh
+		}
+		m.searchInput.Blur()
+		return m, nil
 	}
 
 	// Forward to textinput
@@ -184,6 +218,16 @@ func (m Model) handleSearchKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m Model) handleStationKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	// Defensive clamp at start of handler to prevent out-of-bounds scroll
+	if len(m.stations) > 0 {
+		if m.stationCursor < 0 {
+			m.stationCursor = 0
+		}
+		if m.stationCursor >= len(m.stations) {
+			m.stationCursor = len(m.stations) - 1
+		}
+	}
+
 	switch msg.String() {
 	case "q":
 		return m, tea.Quit
@@ -195,6 +239,10 @@ func (m Model) handleStationKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		m.focus = focusSearch
 		m.searchInput.Focus()
+		return m, nil
+
+	case "shift+tab":
+		m.focus = focusAutoRefresh
 		return m, nil
 
 	case "esc", "/":
@@ -211,6 +259,43 @@ func (m Model) handleStationKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "k", "up":
 		if m.stationCursor > 0 {
 			m.stationCursor--
+		}
+		return m, nil
+
+	case "pgdown":
+		if len(m.stations) > 0 {
+			// Calculate page size based on viewport height
+			pageSize := m.height - 10 // conservative estimate: minus header, filter bar, status
+			if pageSize < 1 {
+				pageSize = 10 // fallback
+			}
+			m.stationCursor += pageSize
+			if m.stationCursor >= len(m.stations) {
+				m.stationCursor = len(m.stations) - 1
+			}
+		}
+		return m, nil
+
+	case "pgup":
+		if len(m.stations) > 0 {
+			pageSize := m.height - 10
+			if pageSize < 1 {
+				pageSize = 10
+			}
+			m.stationCursor -= pageSize
+			if m.stationCursor < 0 {
+				m.stationCursor = 0
+			}
+		}
+		return m, nil
+
+	case "home":
+		m.stationCursor = 0
+		return m, nil
+
+	case "end":
+		if len(m.stations) > 0 {
+			m.stationCursor = len(m.stations) - 1
 		}
 		return m, nil
 
@@ -232,6 +317,16 @@ func (m Model) handleStationKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m Model) handleDepartureKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	// Defensive clamp at start of handler to prevent out-of-bounds scroll
+	if len(m.departures) > 0 {
+		if m.departureCursor < 0 {
+			m.departureCursor = 0
+		}
+		if m.departureCursor >= len(m.departures) {
+			m.departureCursor = len(m.departures) - 1
+		}
+	}
+
 	switch msg.String() {
 	case "q":
 		return m, tea.Quit
@@ -243,6 +338,10 @@ func (m Model) handleDepartureKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.focus = focusSearch
 			m.searchInput.Focus()
 		}
+		return m, nil
+
+	case "shift+tab":
+		m.focus = focusStations
 		return m, nil
 
 	case "esc":
@@ -269,6 +368,43 @@ func (m Model) handleDepartureKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "k", "up":
 		if m.departureCursor > 0 {
 			m.departureCursor--
+		}
+		return m, nil
+
+	case "pgdown":
+		if len(m.departures) > 0 {
+			// Calculate page size based on viewport height
+			pageSize := m.height - 10 // conservative estimate
+			if pageSize < 1 {
+				pageSize = 10
+			}
+			m.departureCursor += pageSize
+			if m.departureCursor >= len(m.departures) {
+				m.departureCursor = len(m.departures) - 1
+			}
+		}
+		return m, nil
+
+	case "pgup":
+		if len(m.departures) > 0 {
+			pageSize := m.height - 10
+			if pageSize < 1 {
+				pageSize = 10
+			}
+			m.departureCursor -= pageSize
+			if m.departureCursor < 0 {
+				m.departureCursor = 0
+			}
+		}
+		return m, nil
+
+	case "home":
+		m.departureCursor = 0
+		return m, nil
+
+	case "end":
+		if len(m.departures) > 0 {
+			m.departureCursor = len(m.departures) - 1
 		}
 		return m, nil
 
@@ -320,6 +456,10 @@ func (m Model) handleAutoRefreshKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.searchInput.Focus()
 		return m, nil
 
+	case "shift+tab":
+		m.focus = focusBoard
+		return m, nil
+
 	case "esc", "/":
 		m.focus = focusSearch
 		m.searchInput.Focus()
@@ -364,6 +504,16 @@ func (m Model) handleCountdownTick() (tea.Model, tea.Cmd) {
 }
 
 func (m Model) handleJourneyKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	// Defensive clamp at start of handler to prevent out-of-bounds scroll
+	if m.journey != nil && len(m.journey.Stops) > 0 {
+		if m.journeyScroll < 0 {
+			m.journeyScroll = 0
+		}
+		if m.journeyScroll >= len(m.journey.Stops) {
+			m.journeyScroll = len(m.journey.Stops) - 1
+		}
+	}
+
 	switch msg.String() {
 	case "q":
 		return m, tea.Quit
@@ -373,6 +523,10 @@ func (m Model) handleJourneyKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.searchInput.Focus()
 		return m, nil
 
+	case "shift+tab":
+		m.focus = focusDepartures
+		return m, nil
+
 	case "esc":
 		m.focus = focusDepartures
 		return m, nil
@@ -380,12 +534,57 @@ func (m Model) handleJourneyKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "j", "down":
 		if m.journey != nil && m.journeyScroll < len(m.journey.Stops)-1 {
 			m.journeyScroll++
+			m.journeyManualScroll = true
 		}
 		return m, nil
 
 	case "k", "up":
 		if m.journeyScroll > 0 {
 			m.journeyScroll--
+			m.journeyManualScroll = true
+		}
+		return m, nil
+
+	case "pgdown":
+		if m.journey != nil && len(m.journey.Stops) > 0 {
+			// Journey stops take ~3 lines each, so page size is smaller
+			viewportHeight := m.height - 10
+			pageSize := viewportHeight / 3
+			if pageSize < 1 {
+				pageSize = 5 // fallback
+			}
+			m.journeyScroll += pageSize
+			if m.journeyScroll >= len(m.journey.Stops) {
+				m.journeyScroll = len(m.journey.Stops) - 1
+			}
+			m.journeyManualScroll = true
+		}
+		return m, nil
+
+	case "pgup":
+		if m.journey != nil && len(m.journey.Stops) > 0 {
+			viewportHeight := m.height - 10
+			pageSize := viewportHeight / 3
+			if pageSize < 1 {
+				pageSize = 5
+			}
+			m.journeyScroll -= pageSize
+			if m.journeyScroll < 0 {
+				m.journeyScroll = 0
+			}
+			m.journeyManualScroll = true
+		}
+		return m, nil
+
+	case "home":
+		m.journeyScroll = 0
+		m.journeyManualScroll = true
+		return m, nil
+
+	case "end":
+		if m.journey != nil && len(m.journey.Stops) > 0 {
+			m.journeyScroll = len(m.journey.Stops) - 1
+			m.journeyManualScroll = true
 		}
 		return m, nil
 	}

@@ -320,6 +320,207 @@ func TestJourneyResultMsg_Success(t *testing.T) {
 	testutil.AssertEqual(t, m.journey.Name, "ICE 123")
 }
 
+func TestJourneyResult_RefreshPreservesManualScroll(t *testing.T) {
+	client, _ := api.NewClient()
+	m := New(client)
+
+	// Set up an already-displayed journey
+	now := time.Now()
+	past := now.Add(-1 * time.Hour)
+	future := now.Add(1 * time.Hour)
+	m.showJourney = true
+	m.journey = &models.Journey{
+		ID:   "journey-123",
+		Name: "ICE 123",
+		Stops: []models.Stop{
+			{Name: "Frankfurt Hbf", EVA: 8000105, Dep: &past},
+			{Name: "Mannheim Hbf", EVA: 8000244, Arr: &now, Dep: &now},
+			{Name: "Stuttgart Hbf", EVA: 8000096, Arr: &future},
+			{Name: "München Hbf", EVA: 8000261, Arr: &future},
+		},
+	}
+
+	// User manually scrolled to stop index 3
+	m.journeyScroll = 3
+	m.journeyManualScroll = true
+
+	// Simulate a refresh with the same journey data
+	msg := journeyResultMsg{
+		journeyID: "journey-123",
+		journey: &models.Journey{
+			ID:   "journey-123",
+			Name: "ICE 123",
+			Stops: []models.Stop{
+				{Name: "Frankfurt Hbf", EVA: 8000105, Dep: &past},
+				{Name: "Mannheim Hbf", EVA: 8000244, Arr: &now, Dep: &now},
+				{Name: "Stuttgart Hbf", EVA: 8000096, Arr: &future},
+				{Name: "München Hbf", EVA: 8000261, Arr: &future},
+			},
+		},
+	}
+
+	newModel, _ := m.Update(msg)
+	m = newModel.(Model)
+
+	// Manual scroll position should be preserved
+	testutil.AssertEqual(t, m.journeyScroll, 3)
+	testutil.AssertTrue(t, m.journeyManualScroll)
+}
+
+func TestJourneyResult_RefreshAutoScrollsWhenNotManual(t *testing.T) {
+	client, _ := api.NewClient()
+	m := New(client)
+
+	// Set up an already-displayed journey with NO manual scroll
+	now := time.Now()
+	past := now.Add(-1 * time.Hour)
+	future := now.Add(1 * time.Hour)
+	m.showJourney = true
+	m.journeyManualScroll = false
+	m.journeyScroll = 0
+	m.journey = &models.Journey{
+		ID:   "journey-123",
+		Name: "ICE 123",
+		Stops: []models.Stop{
+			{Name: "Frankfurt Hbf", EVA: 8000105, Dep: &past},
+			{Name: "Mannheim Hbf", EVA: 8000244, Arr: &past, Dep: &past},
+			{Name: "Stuttgart Hbf", EVA: 8000096, Arr: &future},
+			{Name: "München Hbf", EVA: 8000261, Arr: &future},
+		},
+	}
+
+	// Refresh with same data — should auto-scroll to current station
+	msg := journeyResultMsg{
+		journeyID: "journey-123",
+		journey: &models.Journey{
+			ID:   "journey-123",
+			Name: "ICE 123",
+			Stops: []models.Stop{
+				{Name: "Frankfurt Hbf", EVA: 8000105, Dep: &past},
+				{Name: "Mannheim Hbf", EVA: 8000244, Arr: &past, Dep: &past},
+				{Name: "Stuttgart Hbf", EVA: 8000096, Arr: &future},
+				{Name: "München Hbf", EVA: 8000261, Arr: &future},
+			},
+		},
+	}
+
+	newModel, _ := m.Update(msg)
+	m = newModel.(Model)
+
+	// Should NOT stay at 0 — should auto-scroll to the current stop
+	// The current stop should be around index 1 or 2 (between past and future stops)
+	testutil.AssertTrue(t, m.journeyScroll > 0)
+	testutil.AssertFalse(t, m.journeyManualScroll)
+}
+
+func TestJourneyResult_NewJourneyResetsManualScroll(t *testing.T) {
+	client, _ := api.NewClient()
+	m := New(client)
+
+	// Journey is NOT currently shown — this is a new journey open
+	m.showJourney = false
+	m.journey = nil
+	m.journeyManualScroll = true // leftover from previous journey
+	m.journeyScroll = 5          // leftover scroll position
+
+	now := time.Now()
+	past := now.Add(-1 * time.Hour)
+
+	msg := journeyResultMsg{
+		journeyID: "journey-456",
+		journey: &models.Journey{
+			ID:   "journey-456",
+			Name: "RE 456",
+			Stops: []models.Stop{
+				{Name: "Köln Hbf", EVA: 8000207, Dep: &past},
+				{Name: "Bonn Hbf", EVA: 8000044, Arr: &now},
+			},
+		},
+	}
+
+	newModel, _ := m.Update(msg)
+	m = newModel.(Model)
+
+	// Manual scroll flag should be reset for new journey
+	testutil.AssertFalse(t, m.journeyManualScroll)
+	testutil.AssertTrue(t, m.showJourney)
+}
+
+func TestJourneyResult_RefreshClampsScrollWhenStopsShrank(t *testing.T) {
+	client, _ := api.NewClient()
+	m := New(client)
+
+	now := time.Now()
+	past := now.Add(-1 * time.Hour)
+	m.showJourney = true
+	m.journey = &models.Journey{
+		ID:   "journey-123",
+		Name: "ICE 123",
+		Stops: []models.Stop{
+			{Name: "Frankfurt Hbf", EVA: 8000105, Dep: &past},
+			{Name: "Mannheim Hbf", EVA: 8000244, Arr: &now},
+			{Name: "Stuttgart Hbf", EVA: 8000096, Arr: &now},
+			{Name: "München Hbf", EVA: 8000261, Arr: &now},
+		},
+	}
+	m.journeyScroll = 3 // Scrolled to last stop
+	m.journeyManualScroll = true
+
+	// Refresh with fewer stops
+	msg := journeyResultMsg{
+		journeyID: "journey-123",
+		journey: &models.Journey{
+			ID:   "journey-123",
+			Name: "ICE 123",
+			Stops: []models.Stop{
+				{Name: "Frankfurt Hbf", EVA: 8000105, Dep: &past},
+				{Name: "Mannheim Hbf", EVA: 8000244, Arr: &now},
+			},
+		},
+	}
+
+	newModel, _ := m.Update(msg)
+	m = newModel.(Model)
+
+	// Scroll should be clamped to last valid index
+	testutil.AssertEqual(t, m.journeyScroll, 1)
+	testutil.AssertTrue(t, m.journeyManualScroll)
+}
+
+func TestJourneyKeys_ManualScrollSetsFlag(t *testing.T) {
+	client, _ := api.NewClient()
+	m := New(client)
+	m.focus = focusJourney
+	m.showJourney = true
+	m.journeyManualScroll = false
+
+	now := time.Now()
+	m.journey = &models.Journey{
+		ID:   "journey-123",
+		Name: "ICE 123",
+		Stops: []models.Stop{
+			{Name: "Frankfurt Hbf", EVA: 8000105, Dep: &now},
+			{Name: "Mannheim Hbf", EVA: 8000244, Arr: &now},
+			{Name: "Stuttgart Hbf", EVA: 8000096, Arr: &now},
+		},
+	}
+	m.journeyScroll = 0
+
+	// Press "j" to scroll down
+	newModel, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}})
+	m = newModel.(Model)
+
+	testutil.AssertEqual(t, m.journeyScroll, 1)
+	testutil.AssertTrue(t, m.journeyManualScroll)
+
+	// Press "k" to scroll back up
+	newModel, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'k'}})
+	m = newModel.(Model)
+
+	testutil.AssertEqual(t, m.journeyScroll, 0)
+	testutil.AssertTrue(t, m.journeyManualScroll) // Still true
+}
+
 func TestAutoRefreshTickMsg(t *testing.T) {
 	client, _ := api.NewClient()
 	m := New(client)

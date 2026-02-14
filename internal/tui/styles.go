@@ -44,6 +44,12 @@ var (
 // Selected item in a list
 var styleSelected = lipgloss.NewStyle().Foreground(colorCyan).Bold(true)
 
+// Current stop highlight (red background)
+var styleCurrentStop = lipgloss.NewStyle().
+	Foreground(lipgloss.Color("0")). // Black text
+	Background(colorRed).            // Red background
+	Bold(true)
+
 // Focused chip cursor in the filter bar — reverse-video style
 var styleChipCursor = lipgloss.NewStyle().
 	Foreground(lipgloss.Color("0")).
