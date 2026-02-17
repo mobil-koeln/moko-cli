@@ -16,6 +16,7 @@ const (
 	mapCellPast
 	mapCellCurrent
 	mapCellFuture
+	mapCellSelected // User's selected stop — red outline circle
 )
 
 type mapCell struct {
@@ -24,7 +25,8 @@ type mapCell struct {
 }
 
 // renderRouteMap renders a dots-only geographic map of the journey route.
-func renderRouteMap(stops []models.Stop, currentIdx, width, height int) string {
+// currentIdx is the time-based current stop; selectedIdx is the user's cursor position.
+func renderRouteMap(stops []models.Stop, currentIdx, selectedIdx, width, height int) string {
 	if len(stops) == 0 || width < 3 || height < 3 {
 		return ""
 	}
@@ -147,14 +149,24 @@ func renderRouteMap(stops []models.Stop, currentIdx, width, height int) string {
 		p := points[i]
 		var marker rune
 		var ct mapCellType
-		if v.index < currentIdx {
+		// Marker character: diamond for selected (unless it's also the current station)
+		if v.index == selectedIdx && v.index != currentIdx {
+			marker = '◆'
+		} else if v.index < currentIdx {
 			marker = '○'
-			ct = mapCellPast
 		} else if v.index == currentIdx {
 			marker = '◉'
-			ct = mapCellCurrent
 		} else {
 			marker = '●'
+		}
+		// Selected stop is colored red; otherwise use temporal color
+		if v.index == selectedIdx {
+			ct = mapCellSelected
+		} else if v.index < currentIdx {
+			ct = mapCellPast
+		} else if v.index == currentIdx {
+			ct = mapCellCurrent
+		} else {
 			ct = mapCellFuture
 		}
 		grid[p.row][p.col] = mapCell{ch: marker, ctype: ct}
@@ -165,6 +177,7 @@ func renderRouteMap(stops []models.Stop, currentIdx, width, height int) string {
 	pastStyle := lipgloss.NewStyle().Foreground(colorGray)
 	currentStyle := lipgloss.NewStyle().Foreground(colorRed).Bold(true)
 	futureStyle := lipgloss.NewStyle().Foreground(colorCyan).Bold(true)
+	selectedStyle := lipgloss.NewStyle().Foreground(colorRed).Bold(true)
 
 	var b strings.Builder
 	for r := 0; r < height; r++ {
@@ -180,6 +193,8 @@ func renderRouteMap(stops []models.Stop, currentIdx, width, height int) string {
 				line.WriteString(currentStyle.Render(ch))
 			case mapCellFuture:
 				line.WriteString(futureStyle.Render(ch))
+			case mapCellSelected:
+				line.WriteString(selectedStyle.Render(ch))
 			default:
 				line.WriteString(ch)
 			}

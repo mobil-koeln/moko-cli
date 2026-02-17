@@ -204,7 +204,7 @@ func (m Model) renderRightPanel(width, height int) string {
 
 		journeyView := m.renderJourneyDetail(journeyWidth, bottomHeight)
 		currentIdx := output.FindCurrentStopIndex(m.journey.Stops, time.Now())
-		mapView := renderRouteMap(m.journey.Stops, currentIdx, mapWidth, bottomHeight)
+		mapView := renderRouteMap(m.journey.Stops, currentIdx, m.journeyScroll, mapWidth, bottomHeight)
 
 		// Use lipgloss to enforce fixed-width columns for side-by-side layout.
 		// This correctly handles ANSI escape codes in styled text.
