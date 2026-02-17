@@ -474,7 +474,7 @@ func (c *Client) doRequest(ctx context.Context, reqURL string) ([]byte, error) {
 	// Correlation ID per request
 	req.Header.Set("x-correlation-id", uuid4()+"_"+uuid4())
 
-	resp, err := c.httpClient.Do(req)
+	resp, err := c.httpClient.Do(req) //nolint:gosec // URL is constructed from fixed baseURL + API endpoint constants
 	if err != nil {
 		// Check for context errors
 		if ctx.Err() != nil {

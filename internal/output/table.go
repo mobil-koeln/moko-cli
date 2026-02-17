@@ -119,42 +119,46 @@ func RenderLocations(w io.Writer, locations []models.Location, opts TableOptions
 
 // FindCurrentStopIndex determines which stop the journey is currently at or approaching.
 // Logic:
-// 1. Look at current time and find where train SHOULD be (scheduled)
+// 1. Look at current time and find where train SHOULD be based on scheduled times
 // 2. Get the delay at that point
 // 3. Virtual time = current time - delay (where train actually is on the schedule)
-// 4. Find the station matching that virtual time
+// 4. Find the station matching that virtual time using scheduled times
+//
+// Note: stop.Arr is the effective time (real-time if available, else scheduled).
+// stop.SchedArr is always the scheduled time and is used here for accurate positioning.
 func FindCurrentStopIndex(stops []models.Stop, now time.Time) int {
 	if len(stops) == 0 {
 		return -1
 	}
 
-	// Step 1: Find where the train SHOULD be based on current time
-	// The displayed times (Arr/Dep) ARE the scheduled times
-	// Find the station whose scheduled time is closest to now
+	// schedArrOrArr returns the scheduled arrival for a stop, falling back to the
+	// effective arrival (stop.Arr) when no scheduled time is recorded separately.
+	schedArrOrArr := func(s models.Stop) *time.Time {
+		if s.SchedArr != nil {
+			return s.SchedArr
+		}
+		return s.Arr
+	}
+
+	// Step 1: Find where the train SHOULD be based on current time.
+	// Use scheduled times so that a delayed train's position is determined correctly.
 	delay := 0
 	for i := len(stops) - 1; i >= 0; i-- {
-		// Bounds check before accessing array
-		if i < 0 || i >= len(stops) {
-			continue
-		}
-		if stops[i].Arr != nil && !now.Before(*stops[i].Arr) {
+		t := schedArrOrArr(stops[i]) //nolint:gosec // bounds checked by loop condition and empty slice guard
+		if t != nil && !now.Before(*t) {
 			delay = stops[i].Delay
 			break
 		}
 	}
 
-	// Step 2: Calculate virtual time (where train actually is on schedule)
-	// A train with +6 delay at 19:01 is actually at the 18:55 position
+	// Step 2: Calculate virtual time (where train actually is on schedule).
+	// A train with +6 delay at 19:01 is actually at the 18:55 scheduled position.
 	virtualNow := now.Add(-time.Duration(delay) * time.Minute)
 
-	// Step 3: Find the station at virtual time
-	// Compare directly to scheduled times (Arr) - no subtraction needed
+	// Step 3: Find the station at virtual time using scheduled times.
 	for i := len(stops) - 1; i >= 0; i-- {
-		// Bounds check before accessing array
-		if i < 0 || i >= len(stops) {
-			continue
-		}
-		if stops[i].Arr != nil && !virtualNow.Before(*stops[i].Arr) {
+		t := schedArrOrArr(stops[i]) //nolint:gosec // bounds checked by loop condition and empty slice guard
+		if t != nil && !virtualNow.Before(*t) {
 			return i
 		}
 	}
