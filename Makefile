@@ -4,7 +4,7 @@ OS := $(shell uname)
 .PHONY: build run clean test test-short test-coverage test-integration test-integration-short test-all coverage-check lint lint-fix vet deps compress compress-all release release-all
 
 BINARY=moko
-VERSION=0.1.0
+VERSION=0.3.0
 LDFLAGS=-ldflags "-s -w -X main.version=$(VERSION)"
 BUILDFLAGS=-trimpath
 CGO=CGO_ENABLED=0

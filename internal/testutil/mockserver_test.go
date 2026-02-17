@@ -18,7 +18,7 @@ func TestMockServer(t *testing.T) {
 	// Make request
 	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, ms.URL, nil)
 	AssertNil(t, err)
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := http.DefaultClient.Do(req) //nolint:gosec // URL is from httptest.Server (localhost)
 	AssertNil(t, err)
 	defer func() { _ = resp.Body.Close() }()
 
@@ -45,7 +45,7 @@ func TestMockServerMultipleRequests(t *testing.T) {
 	for i := 0; i < 3; i++ {
 		req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, ms.URL, nil)
 		AssertNil(t, err)
-		resp, err := http.DefaultClient.Do(req)
+		resp, err := http.DefaultClient.Do(req) //nolint:gosec // URL is from httptest.Server (localhost)
 		AssertNil(t, err)
 		_ = resp.Body.Close()
 	}
@@ -62,7 +62,7 @@ func TestMockServerReset(t *testing.T) {
 	// Make request
 	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, ms.URL, nil)
 	AssertNil(t, err)
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := http.DefaultClient.Do(req) //nolint:gosec // URL is from httptest.Server (localhost)
 	AssertNil(t, err)
 	_ = resp.Body.Close()
 
