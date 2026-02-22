@@ -202,26 +202,36 @@ func (m Model) renderRightPanel(width, height int) string {
 			mapWidth = 10
 		}
 
-		journeyView := m.renderJourneyDetail(journeyWidth, bottomHeight)
+		// Reserve 1 line for the legend below the journey+map area
+		legendHeight := 1
+		contentHeight := bottomHeight - legendHeight
+		if contentHeight < 3 {
+			contentHeight = 3
+		}
+
+		journeyView := m.renderJourneyDetail(journeyWidth, contentHeight)
 		currentIdx := output.FindCurrentStopIndex(m.journey.Stops, time.Now())
-		mapView := renderRouteMap(m.journey.Stops, currentIdx, m.journeyScroll, mapWidth, bottomHeight)
+		boardStationIdx := findBoardStationIdx(m.journey.Stops, m.selectedStation)
+		mapView := renderRouteMap(m.journey.Stops, currentIdx, m.journeyScroll, boardStationIdx, mapWidth, contentHeight)
 
 		// Use lipgloss to enforce fixed-width columns for side-by-side layout.
 		// This correctly handles ANSI escape codes in styled text.
 		journeyBox := lipgloss.NewStyle().
 			Width(journeyWidth).
-			Height(bottomHeight).
+			Height(contentHeight).
 			Render(journeyView)
 		mapBox := lipgloss.NewStyle().
 			Width(mapWidth).
-			Height(bottomHeight).
+			Height(contentHeight).
 			Render(mapView)
 
-		vSep := styleMuted.Render(strings.Repeat("│\n", bottomHeight-1) + "│")
+		vSep := styleMuted.Render(strings.Repeat("│\n", contentHeight-1) + "│")
 
 		bottomView := lipgloss.JoinHorizontal(lipgloss.Top, journeyBox, vSep, mapBox)
 
-		return depView + "\n" + separator + "\n" + bottomView
+		legend := renderJourneyLegend(width)
+
+		return depView + "\n" + separator + "\n" + bottomView + "\n" + legend
 	}
 
 	return m.renderDepartureList(width, height)
@@ -416,6 +426,14 @@ func scrollIndicator(cursor, total int) string {
 		return ""
 	}
 	return fmt.Sprintf("%d/%d", cursor+1, total) // 1-indexed for user display
+}
+
+// renderJourneyLegend renders a one-line colour legend for the journey stop list.
+func renderJourneyLegend(width int) string {
+	redSquare := styleCurrentStop.Render(" ")
+	greenSquare := styleBoardStation.Render(" ")
+	legend := " " + redSquare + " Current Station   " + greenSquare + " Journey Station"
+	return styleMuted.Width(width).Render(legend)
 }
 
 // visibleRange calculates the start and end indices for a scrollable list.
