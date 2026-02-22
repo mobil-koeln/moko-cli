@@ -95,6 +95,7 @@ func TestFocusPanel_Constants(t *testing.T) {
 		focusAutoRefresh,
 		focusStations,
 		focusDepartures,
+		focusDestinations,
 		focusJourney,
 	}
 

@@ -18,6 +18,7 @@ const (
 	focusAutoRefresh
 	focusStations
 	focusDepartures
+	focusDestinations
 	focusJourney
 )
 
@@ -78,6 +79,11 @@ type Model struct {
 	departureCursor   int
 	departuresLoading bool
 	departuresErr     error
+
+	// Right panel - destination filter
+	destinationList    []string
+	destinationFilters []bool
+	destinationCursor  int
 
 	// Right panel - journey detail
 	selectedJourneyID   string

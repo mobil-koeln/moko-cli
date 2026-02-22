@@ -110,6 +110,15 @@ func (m Model) handleDeparturesResult(msg departuresResultMsg) (tea.Model, tea.C
 			m.departureCursor = len(m.departures) - 1
 		}
 		m.lastUpdate = time.Now()
+
+		// Rebuild destination list and clamp departure cursor to filtered list
+		m = m.rebuildDestinationList()
+		filtered := m.filteredDepartures()
+		if len(filtered) == 0 {
+			m.departureCursor = 0
+		} else if m.departureCursor >= len(filtered) {
+			m.departureCursor = len(filtered) - 1
+		}
 	}
 	return m, nil
 }
@@ -168,6 +177,8 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.handleStationKeys(msg)
 	case focusDepartures:
 		return m.handleDepartureKeys(msg)
+	case focusDestinations:
+		return m.handleDestinationKeys(msg)
 	case focusJourney:
 		return m.handleJourneyKeys(msg)
 	}
@@ -202,6 +213,8 @@ func (m Model) handleSearchKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.focus = focusJourney
 		} else if len(m.departures) > 0 {
 			m.focus = focusDepartures
+		} else if len(m.destinationList) > 0 {
+			m.focus = focusDestinations
 		} else if len(m.stations) > 0 {
 			m.focus = focusStations
 		} else {
@@ -235,10 +248,10 @@ func (m Model) handleStationKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "tab":
 		if len(m.departures) > 0 {
 			m.focus = focusDepartures
-			return m, nil
+		} else {
+			m.focus = focusSearch
+			m.searchInput.Focus()
 		}
-		m.focus = focusSearch
-		m.searchInput.Focus()
 		return m, nil
 
 	case "shift+tab":
@@ -317,13 +330,15 @@ func (m Model) handleStationKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m Model) handleDepartureKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	deps := m.filteredDepartures()
+
 	// Defensive clamp at start of handler to prevent out-of-bounds scroll
-	if len(m.departures) > 0 {
+	if len(deps) > 0 {
 		if m.departureCursor < 0 {
 			m.departureCursor = 0
 		}
-		if m.departureCursor >= len(m.departures) {
-			m.departureCursor = len(m.departures) - 1
+		if m.departureCursor >= len(deps) {
+			m.departureCursor = len(deps) - 1
 		}
 	}
 
@@ -332,7 +347,9 @@ func (m Model) handleDepartureKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, tea.Quit
 
 	case "tab":
-		if m.showJourney {
+		if len(m.destinationList) > 0 {
+			m.focus = focusDestinations
+		} else if m.showJourney {
 			m.focus = focusJourney
 		} else {
 			m.focus = focusSearch
@@ -360,7 +377,7 @@ func (m Model) handleDepartureKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case "j", "down":
-		if m.departureCursor < len(m.departures)-1 {
+		if m.departureCursor < len(deps)-1 {
 			m.departureCursor++
 		}
 		return m, nil
@@ -372,21 +389,21 @@ func (m Model) handleDepartureKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case "pgdown":
-		if len(m.departures) > 0 {
+		if len(deps) > 0 {
 			// Calculate page size based on viewport height
 			pageSize := m.height - 10 // conservative estimate
 			if pageSize < 1 {
 				pageSize = 10
 			}
 			m.departureCursor += pageSize
-			if m.departureCursor >= len(m.departures) {
-				m.departureCursor = len(m.departures) - 1
+			if m.departureCursor >= len(deps) {
+				m.departureCursor = len(deps) - 1
 			}
 		}
 		return m, nil
 
 	case "pgup":
-		if len(m.departures) > 0 {
+		if len(deps) > 0 {
 			pageSize := m.height - 10
 			if pageSize < 1 {
 				pageSize = 10
@@ -403,14 +420,14 @@ func (m Model) handleDepartureKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case "end":
-		if len(m.departures) > 0 {
-			m.departureCursor = len(m.departures) - 1
+		if len(deps) > 0 {
+			m.departureCursor = len(deps) - 1
 		}
 		return m, nil
 
 	case "enter":
-		if len(m.departures) > 0 {
-			dep := m.departures[m.departureCursor]
+		if len(deps) > 0 {
+			dep := deps[m.departureCursor]
 			if dep.JourneyID != "" {
 				m.selectedJourneyID = dep.JourneyID
 				m.journeyLoading = true
@@ -524,7 +541,11 @@ func (m Model) handleJourneyKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case "shift+tab":
-		m.focus = focusDepartures
+		if len(m.destinationList) > 0 {
+			m.focus = focusDestinations
+		} else {
+			m.focus = focusDepartures
+		}
 		return m, nil
 
 	case "esc":
