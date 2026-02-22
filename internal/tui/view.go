@@ -31,8 +31,8 @@ func (m Model) View() string {
 		panelHeight = 3
 	}
 
-	// Panel widths: ~35% left, ~65% right
-	leftWidth := m.width*35/100 - 2 // subtract border
+	// Panel widths: ~35% left, rest right
+	leftWidth := m.width*35/100 - 2
 	rightWidth := m.width - leftWidth - 4
 	if leftWidth < 20 {
 		leftWidth = 20
@@ -55,7 +55,7 @@ func (m Model) View() string {
 		Render(leftPanel)
 
 	rightBorder := stylePanelNormal
-	if m.focus == focusDepartures || m.focus == focusJourney {
+	if m.focus == focusDepartures || m.focus == focusDestinations || m.focus == focusJourney {
 		rightBorder = stylePanelFocused
 	}
 	rightPanel = rightBorder.
@@ -176,25 +176,45 @@ func (m Model) renderStationList(width, height int) string {
 	return title + "\n" + b.String()
 }
 
-// renderRightPanel renders departures and optionally journey details with route map.
+// renderRightPanel renders the right panel:
+//
+//	top row:    departures (left) | destinations (right)
+//	bottom row: journey (left) | map (right)  — only when journey is open
 func (m Model) renderRightPanel(width, height int) string {
+	// Split top row between departures and destinations
+	destWidth := width * 28 / 100
+	if destWidth < 14 {
+		destWidth = 14
+	}
+	depWidth := width - destWidth - 1 // -1 for vertical separator
+	if depWidth < 20 {
+		depWidth = 20
+	}
+
 	if m.showJourney && m.journey != nil {
-		// Split: top 45% departures, bottom 55% journey+map side by side
-		depHeight := height * 45 / 100
-		bottomHeight := height - depHeight - 1 // -1 for separator
-		if depHeight < 4 {
-			depHeight = 4
+		// Top: departures | destinations, bottom: journey | map
+		topHeight := height * 45 / 100
+		bottomHeight := height - topHeight - 1 // -1 for separator
+		if topHeight < 4 {
+			topHeight = 4
 		}
 		if bottomHeight < 4 {
 			bottomHeight = 4
 		}
 
-		depView := m.renderDepartureList(width, depHeight)
+		// Top row
+		depView := m.renderDepartureList(depWidth, topHeight)
+		destView := m.renderDestinationPanel(destWidth, topHeight)
+		vSepTop := styleMuted.Render(strings.Repeat("│\n", topHeight-1) + "│")
+		depBox := lipgloss.NewStyle().Width(depWidth).Height(topHeight).Render(depView)
+		destBox := lipgloss.NewStyle().Width(destWidth).Height(topHeight).Render(destView)
+		topRow := lipgloss.JoinHorizontal(lipgloss.Top, depBox, vSepTop, destBox)
+
 		separator := styleMuted.Render(strings.Repeat("─", width))
 
-		// Split bottom area: journey on left ~55%, route map on right ~45%
+		// Bottom row: journey | map
 		journeyWidth := width * 55 / 100
-		mapWidth := width - journeyWidth - 1 // -1 for vertical separator
+		mapWidth := width - journeyWidth - 1
 		if journeyWidth < 20 {
 			journeyWidth = 20
 		}
@@ -202,7 +222,6 @@ func (m Model) renderRightPanel(width, height int) string {
 			mapWidth = 10
 		}
 
-		// Reserve 1 line for the legend below the journey+map area
 		legendHeight := 1
 		contentHeight := bottomHeight - legendHeight
 		if contentHeight < 3 {
@@ -214,27 +233,23 @@ func (m Model) renderRightPanel(width, height int) string {
 		boardStationIdx := findBoardStationIdx(m.journey.Stops, m.selectedStation)
 		mapView := renderRouteMap(m.journey.Stops, currentIdx, m.journeyScroll, boardStationIdx, mapWidth, contentHeight)
 
-		// Use lipgloss to enforce fixed-width columns for side-by-side layout.
-		// This correctly handles ANSI escape codes in styled text.
-		journeyBox := lipgloss.NewStyle().
-			Width(journeyWidth).
-			Height(contentHeight).
-			Render(journeyView)
-		mapBox := lipgloss.NewStyle().
-			Width(mapWidth).
-			Height(contentHeight).
-			Render(mapView)
-
+		journeyBox := lipgloss.NewStyle().Width(journeyWidth).Height(contentHeight).Render(journeyView)
+		mapBox := lipgloss.NewStyle().Width(mapWidth).Height(contentHeight).Render(mapView)
 		vSep := styleMuted.Render(strings.Repeat("│\n", contentHeight-1) + "│")
-
-		bottomView := lipgloss.JoinHorizontal(lipgloss.Top, journeyBox, vSep, mapBox)
+		bottomRow := lipgloss.JoinHorizontal(lipgloss.Top, journeyBox, vSep, mapBox)
 
 		legend := renderJourneyLegend(width)
 
-		return depView + "\n" + separator + "\n" + bottomView + "\n" + legend
+		return topRow + "\n" + separator + "\n" + bottomRow + "\n" + legend
 	}
 
-	return m.renderDepartureList(width, height)
+	// No journey: departures | destinations side by side
+	depView := m.renderDepartureList(depWidth, height)
+	destView := m.renderDestinationPanel(destWidth, height)
+	vSep := styleMuted.Render(strings.Repeat("│\n", height-1) + "│")
+	depBox := lipgloss.NewStyle().Width(depWidth).Height(height).Render(depView)
+	destBox := lipgloss.NewStyle().Width(destWidth).Height(height).Render(destView)
+	return lipgloss.JoinHorizontal(lipgloss.Top, depBox, vSep, destBox)
 }
 
 // renderDepartureList renders the departure table.
@@ -249,6 +264,18 @@ func (m Model) renderDepartureList(width, height int) string {
 	if m.focus == focusDepartures {
 		title = "▶ " + title // Add indicator when focused
 	}
+	// Show filter status in title when some destinations are inactive
+	if len(m.destinationFilters) > 0 {
+		active := 0
+		for _, f := range m.destinationFilters {
+			if f {
+				active++
+			}
+		}
+		if active < len(m.destinationFilters) {
+			title += fmt.Sprintf(" (%d/%d dest)", active, len(m.destinationFilters))
+		}
+	}
 	titleStr := styleHeader.Render(title)
 
 	if m.departuresLoading {
@@ -260,7 +287,9 @@ func (m Model) renderDepartureList(width, height int) string {
 	if m.selectedStation == nil {
 		return titleStr + "\n" + styleMuted.Render(" Select a station to view departures")
 	}
-	if len(m.departures) == 0 {
+
+	deps := m.filteredDepartures()
+	if len(deps) == 0 {
 		return titleStr + "\n" + styleMuted.Render(" No departures found")
 	}
 
@@ -271,12 +300,12 @@ func (m Model) renderDepartureList(width, height int) string {
 	if maxVisible < 1 {
 		maxVisible = 1
 	}
-	start, end := visibleRange(m.departureCursor, len(m.departures), maxVisible)
+	start, end := visibleRange(m.departureCursor, len(deps), maxVisible)
 
 	// Build content lines
 	var contentLines []string
 	for i := start; i < end; i++ {
-		dep := m.departures[i]
+		dep := deps[i]
 		line := renderDepartureLine(dep, contentWidth, i == m.departureCursor && m.focus == focusDepartures)
 		contentLines = append(contentLines, line)
 	}
@@ -287,7 +316,7 @@ func (m Model) renderDepartureList(width, height int) string {
 	}
 
 	// Render scrollbar
-	scrollbar := renderScrollbar(m.departureCursor, len(m.departures), maxVisible)
+	scrollbar := renderScrollbar(m.departureCursor, len(deps), maxVisible)
 	scrollbarLines := strings.Split(scrollbar, "\n")
 
 	// Combine content and scrollbar
@@ -395,6 +424,8 @@ func (m Model) renderStatusBar() string {
 		hints = "j/k:nav  PgUp/PgDn:page  Home/End:jump  Enter:select  Tab/Shift+Tab:nav  /:search  q:quit"
 	case focusDepartures:
 		hints = "j/k:nav  PgUp/PgDn:page  Home/End:jump  Enter:journey  Tab/Shift+Tab:nav  Esc:back  q:quit"
+	case focusDestinations:
+		hints = "j/k:nav  Space:toggle  a:all  Tab:next  Shift+Tab:back  Esc:search  q:quit"
 	case focusJourney:
 		hints = "j/k:scroll  PgUp/PgDn:page  Home/End:jump  Tab/Shift+Tab:nav  Esc:back  q:quit"
 	}
@@ -405,7 +436,9 @@ func (m Model) renderStatusBar() string {
 	case focusStations:
 		indicator = scrollIndicator(m.stationCursor, len(m.stations))
 	case focusDepartures:
-		indicator = scrollIndicator(m.departureCursor, len(m.departures))
+		indicator = scrollIndicator(m.departureCursor, len(m.filteredDepartures()))
+	case focusDestinations:
+		indicator = scrollIndicator(m.destinationCursor, len(m.destinationList))
 	case focusJourney:
 		if m.journey != nil {
 			indicator = scrollIndicator(m.journeyScroll, len(m.journey.Stops))

@@ -203,6 +203,7 @@ func (m Model) refetchBoard() (tea.Model, tea.Cmd) {
 		m.departuresErr = nil
 		m.departures = nil
 		m.departureCursor = 0
+		m.destinationCursor = 0
 		m.showJourney = false
 		m.journey = nil
 		return m, fetchBoard(m.client, *m.selectedStation, m.selectedModes(), m.boardMode)
