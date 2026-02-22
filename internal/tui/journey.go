@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/charmbracelet/lipgloss"
+	"github.com/mobil-koeln/moko-cli/internal/models"
 	"github.com/mobil-koeln/moko-cli/internal/output"
 )
 
@@ -40,6 +41,8 @@ func (m Model) renderJourneyDetail(width, height int) string {
 
 	currentIdx := output.FindCurrentStopIndex(stops, time.Now())
 
+	boardStationIdx := findBoardStationIdx(stops, m.selectedStation)
+
 	maxVisible := height - 2
 	if maxVisible < 1 {
 		maxVisible = 1
@@ -53,6 +56,7 @@ func (m Model) renderJourneyDetail(width, height int) string {
 		isFirst := i == 0
 		isLast := i == len(stops)-1
 		isCurrent := i == currentIdx
+		isBoardStation := i == boardStationIdx
 		isScrolledTo := i == m.journeyScroll // User's scroll position
 
 		// Route symbol
@@ -140,14 +144,17 @@ func (m Model) renderJourneyDetail(width, height int) string {
 			)
 		}
 
-		// Apply full-width highlight based on state
+		// Apply full-width highlight based on state (priority: red > green > cyan > normal)
 		var line string
-		if isScrolledTo && m.showJourney && !isCurrent {
+		if isCurrent && !stop.IsCancelled {
+			// Red highlight for current stop (full width, highest priority)
+			line = styleCurrentStop.Width(contentWidth).Render(lineContent)
+		} else if isBoardStation && !stop.IsCancelled {
+			// Green highlight for board station (full width)
+			line = styleBoardStation.Width(contentWidth).Render(lineContent)
+		} else if isScrolledTo && m.showJourney && !isCurrent {
 			// Cyan highlight for scroll position (full width)
 			line = styleSelected.Width(contentWidth).Render(lineContent)
-		} else if isCurrent && !stop.IsCancelled {
-			// Red highlight for current stop (full width)
-			line = styleCurrentStop.Width(contentWidth).Render(lineContent)
 		} else if stop.IsCancelled {
 			// No background, just colored text for cancelled
 			// Get styled delay for non-highlighted rows
@@ -216,4 +223,46 @@ func (m Model) renderJourneyDetail(width, height int) string {
 	}
 
 	return titleStr + "\n" + b.String()
+}
+
+// findBoardStationIdx returns the index of the stop that matches the board station,
+// or -1 if not found. Uses EVA matching first, then coordinate proximity as fallback.
+func findBoardStationIdx(stops []models.Stop, station *models.Location) int {
+	if station == nil {
+		return -1
+	}
+
+	// Primary: exact EVA match (works for DB train stations and when EVA is populated)
+	if station.EVA != 0 {
+		for i, s := range stops {
+			if s.EVA == station.EVA {
+				return i
+			}
+		}
+	}
+
+	// Fallback: coordinate proximity match (for transit stops where EVA may differ)
+	// Coordinates are parsed from Hafas IDs (@X=lon@Y=lat) and are consistent
+	// across location search and journey APIs when referring to the same stop.
+	if station.Lat != 0 && station.Lon != 0 {
+		const tolerance = 0.001 // ~100m, enough to identify same stop
+		for i, s := range stops {
+			if s.Lat == 0 && s.Lon == 0 {
+				continue
+			}
+			dLat := s.Lat - station.Lat
+			dLon := s.Lon - station.Lon
+			if dLat < 0 {
+				dLat = -dLat
+			}
+			if dLon < 0 {
+				dLon = -dLon
+			}
+			if dLat < tolerance && dLon < tolerance {
+				return i
+			}
+		}
+	}
+
+	return -1
 }

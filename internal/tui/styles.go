@@ -50,6 +50,12 @@ var styleCurrentStop = lipgloss.NewStyle().
 	Background(colorRed).            // Red background
 	Bold(true)
 
+// Board station highlight (green background)
+var styleBoardStation = lipgloss.NewStyle().
+	Foreground(lipgloss.Color("0")). // Black text
+	Background(colorGreen).          // Green background
+	Bold(true)
+
 // Focused chip cursor in the filter bar — reverse-video style
 var styleChipCursor = lipgloss.NewStyle().
 	Foreground(lipgloss.Color("0")).

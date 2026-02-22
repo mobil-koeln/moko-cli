@@ -1,11 +1,15 @@
 package models
 
 import (
+	"regexp"
 	"strings"
 	"time"
 
 	"github.com/mobil-koeln/moko-cli/internal/operators"
 )
+
+// hafasEVARegex extracts the EVA number from a Hafas ID string (e.g. "@L=900312003@")
+var hafasEVARegex = regexp.MustCompile(`@L=(\d+)@`)
 
 // Journey represents a complete trip/journey with all stops
 type Journey struct {
@@ -271,17 +275,36 @@ func mostCommon(m map[string]int) string {
 	return maxKey
 }
 
-// Helper to parse int from string
+// Helper to parse int from string.
+// Handles both plain numbers ("900312003") and Hafas ID strings ("A=1@O=...@L=900312003@").
 func parseIntFromString(s string) int64 {
+	// Fast path: plain decimal number
 	var result int64
+	allDigits := true
 	for _, c := range s {
 		if c >= '0' && c <= '9' {
 			result = result*10 + int64(c-'0')
 		} else {
+			allDigits = false
 			break
 		}
 	}
-	return result
+	if allDigits && result != 0 {
+		return result
+	}
+
+	// Slow path: Hafas ID format "@L=<eva>@"
+	if matches := hafasEVARegex.FindStringSubmatch(s); len(matches) == 2 {
+		var n int64
+		for _, c := range matches[1] {
+			if c >= '0' && c <= '9' {
+				n = n*10 + int64(c-'0')
+			}
+		}
+		return n
+	}
+
+	return 0
 }
 
 // Helper to parse float from string

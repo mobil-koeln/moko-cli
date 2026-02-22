@@ -16,7 +16,8 @@ const (
 	mapCellPast
 	mapCellCurrent
 	mapCellFuture
-	mapCellSelected // User's selected stop — red outline circle
+	mapCellSelected     // User's selected stop — red outline circle
+	mapCellBoardStation // Board query station — green
 )
 
 type mapCell struct {
@@ -25,8 +26,9 @@ type mapCell struct {
 }
 
 // renderRouteMap renders a dots-only geographic map of the journey route.
-// currentIdx is the time-based current stop; selectedIdx is the user's cursor position.
-func renderRouteMap(stops []models.Stop, currentIdx, selectedIdx, width, height int) string {
+// currentIdx is the time-based current stop; selectedIdx is the user's cursor position;
+// boardStationIdx is the station from which the departure board was queried (green).
+func renderRouteMap(stops []models.Stop, currentIdx, selectedIdx, boardStationIdx, width, height int) string {
 	if len(stops) == 0 || width < 3 || height < 3 {
 		return ""
 	}
@@ -144,31 +146,34 @@ func renderRouteMap(stops []models.Stop, currentIdx, selectedIdx, width, height 
 		bresenhamLine(grid, points[i].col, points[i].row, points[i+1].col, points[i+1].row)
 	}
 
-	// Place stop markers
+	// Place stop markers — priority: current (red) > board station (green) > scroll cursor > temporal
 	for i, v := range valid {
 		p := points[i]
 		var marker rune
 		var ct mapCellType
-		// Marker character: diamond for selected (unless it's also the current station)
-		if v.index == selectedIdx && v.index != currentIdx {
-			marker = '◆'
-		} else if v.index < currentIdx {
-			marker = '○'
-		} else if v.index == currentIdx {
+
+		isCurrent := v.index == currentIdx
+		isBoard := v.index == boardStationIdx
+		isSelected := v.index == selectedIdx
+
+		switch {
+		case isCurrent:
 			marker = '◉'
-		} else {
-			marker = '●'
-		}
-		// Selected stop is colored red; otherwise use temporal color
-		if v.index == selectedIdx {
-			ct = mapCellSelected
-		} else if v.index < currentIdx {
-			ct = mapCellPast
-		} else if v.index == currentIdx {
 			ct = mapCellCurrent
-		} else {
+		case isBoard:
+			marker = '●'
+			ct = mapCellBoardStation
+		case isSelected:
+			marker = '◆'
+			ct = mapCellSelected
+		case v.index < currentIdx:
+			marker = '○'
+			ct = mapCellPast
+		default:
+			marker = '●'
 			ct = mapCellFuture
 		}
+
 		grid[p.row][p.col] = mapCell{ch: marker, ctype: ct}
 	}
 
@@ -178,6 +183,7 @@ func renderRouteMap(stops []models.Stop, currentIdx, selectedIdx, width, height 
 	currentStyle := lipgloss.NewStyle().Foreground(colorRed).Bold(true)
 	futureStyle := lipgloss.NewStyle().Foreground(colorCyan).Bold(true)
 	selectedStyle := lipgloss.NewStyle().Foreground(colorRed).Bold(true)
+	boardStationStyle := lipgloss.NewStyle().Foreground(colorGreen).Bold(true)
 
 	var b strings.Builder
 	for r := 0; r < height; r++ {
@@ -195,6 +201,8 @@ func renderRouteMap(stops []models.Stop, currentIdx, selectedIdx, width, height 
 				line.WriteString(futureStyle.Render(ch))
 			case mapCellSelected:
 				line.WriteString(selectedStyle.Render(ch))
+			case mapCellBoardStation:
+				line.WriteString(boardStationStyle.Render(ch))
 			default:
 				line.WriteString(ch)
 			}
